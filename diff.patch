@@ -1,0 +1,594 @@
+diff --git a/main.c b/main.c
+index 2cb9a09..402f448 100644
+--- a/main.c
++++ b/main.c
+@@ -64,17 +64,11 @@
+ #include "nrf_ble_qwr.h"
+ #include "app_timer.h"
+ #include "ble_nus.h"
+-#include "app_uart.h"
+ #include "app_util_platform.h"
+ #include "bsp_btn_ble.h"
+ #include "nrf_pwr_mgmt.h"
+ 
+-#if defined (UART_PRESENT)
+-#include "nrf_uart.h"
+-#endif
+-#if defined (UARTE_PRESENT)
+-#include "nrf_uarte.h"
+-#endif
++#include "nrf_libuarte_async.h"
+ 
+ #include "nrf_log.h"
+ #include "nrf_log_ctrl.h"
+@@ -82,7 +76,7 @@
+ 
+ #define APP_BLE_CONN_CFG_TAG            1                                           /**< A tag identifying the SoftDevice BLE configuration. */
+ 
+-#define DEVICE_NAME                     "Nordic_UART"                               /**< Name of device. Will be included in the advertising data. */
++#define DEVICE_NAME                     "nRF_libUARTE"                               /**< Name of device. Will be included in the advertising data. */
+ #define NUS_SERVICE_UUID_TYPE           BLE_UUID_TYPE_VENDOR_BEGIN                  /**< UUID type for the Nordic UART Service (vendor specific). */
+ 
+ #define APP_BLE_OBSERVER_PRIO           3                                           /**< Application's BLE observer priority. You shouldn't need to modify this value. */
+@@ -101,9 +95,7 @@
+ 
+ #define DEAD_BEEF                       0xDEADBEEF                                  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
+ 
+-#define UART_TX_BUF_SIZE                256                                         /**< UART TX buffer size. */
+-#define UART_RX_BUF_SIZE                256                                         /**< UART RX buffer size. */
+-
++NRF_LIBUARTE_ASYNC_DEFINE(libuarte, 0, 1, 2, NRF_LIBUARTE_PERIPHERAL_NOT_USED, 255, 3);
+ 
+ BLE_NUS_DEF(m_nus, NRF_SDH_BLE_TOTAL_LINK_COUNT);                                   /**< BLE NUS service instance. */
+ NRF_BLE_GATT_DEF(m_gatt);                                                           /**< GATT module instance. */
+@@ -203,22 +195,16 @@ static void nus_data_handler(ble_nus_evt_t * p_evt)
+         NRF_LOG_DEBUG("Received data from BLE NUS. Writing data on UART.");
+         NRF_LOG_HEXDUMP_DEBUG(p_evt->params.rx_data.p_data, p_evt->params.rx_data.length);
+ 
+-        for (uint32_t i = 0; i < p_evt->params.rx_data.length; i++)
+-        {
+-            do
+-            {
+-                err_code = app_uart_put(p_evt->params.rx_data.p_data[i]);
+-                if ((err_code != NRF_SUCCESS) && (err_code != NRF_ERROR_BUSY))
+-                {
+-                    NRF_LOG_ERROR("Failed receiving NUS message. Error 0x%x. ", err_code);
+-                    APP_ERROR_CHECK(err_code);
+-                }
+-            } while (err_code == NRF_ERROR_BUSY);
+-        }
+-        if (p_evt->params.rx_data.p_data[p_evt->params.rx_data.length - 1] == '\r')
+-        {
+-            while (app_uart_put('\n') == NRF_ERROR_BUSY);
+-        }
++        uint8_t uart_string[BLE_NUS_MAX_DATA_LEN+2] = "";
++        memcpy(uart_string, p_evt->params.rx_data.p_data, p_evt->params.rx_data.length);
++        uart_string[p_evt->params.rx_data.length] = '\r';
++        uart_string[p_evt->params.rx_data.length+1] = '\n';
++
++
++
++        err_code = nrf_libuarte_async_tx(&libuarte,uart_string, p_evt->params.rx_data.length + 2);
++        APP_ERROR_CHECK(err_code);
++
+     }
+ 
+ }
+@@ -518,52 +504,38 @@ void bsp_event_handler(bsp_event_t event)
+  *          'new line' '\n' (hex 0x0A) or if the string has reached the maximum data length.
+  */
+ /**@snippet [Handling the data received over UART] */
+-void uart_event_handle(app_uart_evt_t * p_event)
++void uart_event_handler(void * context, nrf_libuarte_async_evt_t * p_evt)
+ {
+-    static uint8_t data_array[BLE_NUS_MAX_DATA_LEN];
+-    static uint8_t index = 0;
+-    uint32_t       err_code;
++    nrf_libuarte_async_t * p_libuarte = (nrf_libuarte_async_t *)context;
++    ret_code_t     ret;
++    uint16_t index = 0;
+ 
+-    switch (p_event->evt_type)
++    switch (p_evt->type)
+     {
+-        case APP_UART_DATA_READY:
+-            UNUSED_VARIABLE(app_uart_get(&data_array[index]));
+-            index++;
+-
+-            if ((data_array[index - 1] == '\n') ||
+-                (data_array[index - 1] == '\r') ||
+-                (index >= m_ble_nus_max_data_len))
++        case NRF_LIBUARTE_ASYNC_EVT_ERROR:
++            break;
++        case NRF_LIBUARTE_ASYNC_EVT_RX_DATA:
++            while (index < p_evt->data.rxtx.length)
+             {
+-                if (index > 1)
++                uint16_t length = (uint16_t)(p_evt->data.rxtx.length - index > BLE_NUS_MAX_DATA_LEN) ? BLE_NUS_MAX_DATA_LEN : p_evt->data.rxtx.length - index;
++                do
+                 {
+-                    NRF_LOG_DEBUG("Ready to send data over BLE NUS");
+-                    NRF_LOG_HEXDUMP_DEBUG(data_array, index);
+-
+-                    do
++                    ret = ble_nus_data_send(&m_nus, p_evt->data.rxtx.p_data + index, &length, m_conn_handle);
++                    if ((ret != NRF_ERROR_INVALID_STATE) &&
++                        (ret != NRF_ERROR_RESOURCES) &&
++                        (ret != NRF_ERROR_NOT_FOUND))
+                     {
+-                        uint16_t length = (uint16_t)index;
+-                        err_code = ble_nus_data_send(&m_nus, data_array, &length, m_conn_handle);
+-                        if ((err_code != NRF_ERROR_INVALID_STATE) &&
+-                            (err_code != NRF_ERROR_RESOURCES) &&
+-                            (err_code != NRF_ERROR_NOT_FOUND))
+-                        {
+-                            APP_ERROR_CHECK(err_code);
+-                        }
+-                    } while (err_code == NRF_ERROR_RESOURCES);
+-                }
+-
+-                index = 0;
++                        APP_ERROR_CHECK(ret);
++                    }
++                } while (ret == NRF_ERROR_RESOURCES);
++                index += length;
+             }
++            nrf_libuarte_async_rx_free(p_libuarte, p_evt->data.rxtx.p_data, p_evt->data.rxtx.length);
+             break;
+ 
+-        case APP_UART_COMMUNICATION_ERROR:
+-            APP_ERROR_HANDLER(p_event->data.error_communication);
+-            break;
++        case NRF_LIBUARTE_ASYNC_EVT_TX_DONE:
+ 
+-        case APP_UART_FIFO_ERROR:
+-            APP_ERROR_HANDLER(p_event->data.error_code);
+             break;
+-
+         default:
+             break;
+     }
+@@ -577,27 +549,27 @@ void uart_event_handle(app_uart_evt_t * p_event)
+ static void uart_init(void)
+ {
+     uint32_t                     err_code;
+-    app_uart_comm_params_t const comm_params =
+-    {
+-        .rx_pin_no    = RX_PIN_NUMBER,
+-        .tx_pin_no    = TX_PIN_NUMBER,
+-        .rts_pin_no   = RTS_PIN_NUMBER,
+-        .cts_pin_no   = CTS_PIN_NUMBER,
+-        .flow_control = APP_UART_FLOW_CONTROL_DISABLED,
+-        .use_parity   = false,
+-#if defined (UART_PRESENT)
+-        .baud_rate    = NRF_UART_BAUDRATE_115200
+-#else
+-        .baud_rate    = NRF_UARTE_BAUDRATE_115200
+-#endif
++
++    nrf_libuarte_async_config_t nrf_libuarte_async_config = {
++            .tx_pin     = TX_PIN_NUMBER,
++            .rx_pin     = RX_PIN_NUMBER,
++            .baudrate   = NRF_UARTE_BAUDRATE_115200,
++            .parity     = NRF_UARTE_PARITY_EXCLUDED,
++            .hwfc       = NRF_UARTE_HWFC_DISABLED,
++            .timeout_us = 100,
++            .int_prio   = APP_IRQ_PRIORITY_LOW
+     };
+ 
+-    APP_UART_FIFO_INIT(&comm_params,
+-                       UART_RX_BUF_SIZE,
+-                       UART_TX_BUF_SIZE,
+-                       uart_event_handle,
+-                       APP_IRQ_PRIORITY_LOWEST,
+-                       err_code);
++    err_code = nrf_libuarte_async_init(&libuarte, &nrf_libuarte_async_config, uart_event_handler, (void *)&libuarte);
++
++    APP_ERROR_CHECK(err_code);
++
++    nrf_libuarte_async_enable(&libuarte);
++
++    static uint8_t text[] = "ble_app_libUARTE example started.\r\n";
++    static uint8_t text_size = sizeof(text);
++
++    err_code = nrf_libuarte_async_tx(&libuarte, text, text_size);
+     APP_ERROR_CHECK(err_code);
+ }
+ /**@snippet [UART Initialization] */
+@@ -712,7 +684,6 @@ int main(void)
+     conn_params_init();
+ 
+     // Start execution.
+-    printf("\r\nUART started.\r\n");
+     NRF_LOG_INFO("Debug logging for UART over RTT started.");
+     advertising_start();
+ 
+diff --git a/pca10056/s140/config/sdk_config.h b/pca10056/s140/config/sdk_config.h
+index 91b5ee9..92e54fb 100644
+--- a/pca10056/s140/config/sdk_config.h
++++ b/pca10056/s140/config/sdk_config.h
+@@ -2600,7 +2600,7 @@
+ // <e> NRFX_PPI_ENABLED - nrfx_ppi - PPI peripheral allocator
+ //==========================================================
+ #ifndef NRFX_PPI_ENABLED
+-#define NRFX_PPI_ENABLED 0
++#define NRFX_PPI_ENABLED 1
+ #endif
+ // <e> NRFX_PPI_CONFIG_LOG_ENABLED - Enables logging in the module.
+ //==========================================================
+@@ -3289,7 +3289,7 @@
+ // <e> NRFX_RTC_ENABLED - nrfx_rtc - RTC peripheral driver
+ //==========================================================
+ #ifndef NRFX_RTC_ENABLED
+-#define NRFX_RTC_ENABLED 0
++#define NRFX_RTC_ENABLED 1
+ #endif
+ // <q> NRFX_RTC0_ENABLED  - Enable RTC0 instance
+  
+@@ -3309,7 +3309,7 @@
+  
+ 
+ #ifndef NRFX_RTC2_ENABLED
+-#define NRFX_RTC2_ENABLED 0
++#define NRFX_RTC2_ENABLED 1
+ #endif
+ 
+ // <o> NRFX_RTC_MAXIMUM_LATENCY_US - Maximum possible time[us] in highest priority interrupt 
+@@ -3946,7 +3946,7 @@
+ // <e> NRFX_TIMER_ENABLED - nrfx_timer - TIMER periperal driver
+ //==========================================================
+ #ifndef NRFX_TIMER_ENABLED
+-#define NRFX_TIMER_ENABLED 0
++#define NRFX_TIMER_ENABLED 1
+ #endif
+ // <q> NRFX_TIMER0_ENABLED  - Enable TIMER0 instance
+  
+@@ -3959,7 +3959,7 @@
+  
+ 
+ #ifndef NRFX_TIMER1_ENABLED
+-#define NRFX_TIMER1_ENABLED 0
++#define NRFX_TIMER1_ENABLED 1
+ #endif
+ 
+ // <q> NRFX_TIMER2_ENABLED  - Enable TIMER2 instance
+@@ -4980,13 +4980,6 @@
+ 
+ // </e>
+ 
+-// <q> PPI_ENABLED  - nrf_drv_ppi - PPI peripheral driver - legacy layer
+- 
+-
+-#ifndef PPI_ENABLED
+-#define PPI_ENABLED 0
+-#endif
+-
+ // <e> PWM_ENABLED - nrf_drv_pwm - PWM peripheral driver - legacy layer
+ //==========================================================
+ #ifndef PWM_ENABLED
+@@ -5385,63 +5378,6 @@
+ 
+ // </e>
+ 
+-// <e> RTC_ENABLED - nrf_drv_rtc - RTC peripheral driver - legacy layer
+-//==========================================================
+-#ifndef RTC_ENABLED
+-#define RTC_ENABLED 0
+-#endif
+-// <o> RTC_DEFAULT_CONFIG_FREQUENCY - Frequency  <16-32768> 
+-
+-
+-#ifndef RTC_DEFAULT_CONFIG_FREQUENCY
+-#define RTC_DEFAULT_CONFIG_FREQUENCY 32768
+-#endif
+-
+-// <q> RTC_DEFAULT_CONFIG_RELIABLE  - Ensures safe compare event triggering
+- 
+-
+-#ifndef RTC_DEFAULT_CONFIG_RELIABLE
+-#define RTC_DEFAULT_CONFIG_RELIABLE 0
+-#endif
+-
+-// <o> RTC_DEFAULT_CONFIG_IRQ_PRIORITY  - Interrupt priority
+- 
+-
+-// <i> Priorities 0,2 (nRF51) and 0,1,4,5 (nRF52) are reserved for SoftDevice
+-// <0=> 0 (highest) 
+-// <1=> 1 
+-// <2=> 2 
+-// <3=> 3 
+-// <4=> 4 
+-// <5=> 5 
+-// <6=> 6 
+-// <7=> 7 
+-
+-#ifndef RTC_DEFAULT_CONFIG_IRQ_PRIORITY
+-#define RTC_DEFAULT_CONFIG_IRQ_PRIORITY 6
+-#endif
+-
+-// <q> RTC0_ENABLED  - Enable RTC0 instance
+- 
+-
+-#ifndef RTC0_ENABLED
+-#define RTC0_ENABLED 0
+-#endif
+-
+-// <q> RTC1_ENABLED  - Enable RTC1 instance
+- 
+-
+-#ifndef RTC1_ENABLED
+-#define RTC1_ENABLED 0
+-#endif
+-
+-// <q> RTC2_ENABLED  - Enable RTC2 instance
+- 
+-
+-#ifndef RTC2_ENABLED
+-#define RTC2_ENABLED 0
+-#endif
+-
+ // <o> NRF_MAXIMUM_LATENCY_US - Maximum possible time[us] in highest priority interrupt 
+ #ifndef NRF_MAXIMUM_LATENCY_US
+ #define NRF_MAXIMUM_LATENCY_US 2000
+@@ -5662,102 +5598,6 @@
+ 
+ // </e>
+ 
+-// <e> TIMER_ENABLED - nrf_drv_timer - TIMER periperal driver - legacy layer
+-//==========================================================
+-#ifndef TIMER_ENABLED
+-#define TIMER_ENABLED 0
+-#endif
+-// <o> TIMER_DEFAULT_CONFIG_FREQUENCY  - Timer frequency if in Timer mode
+- 
+-// <0=> 16 MHz 
+-// <1=> 8 MHz 
+-// <2=> 4 MHz 
+-// <3=> 2 MHz 
+-// <4=> 1 MHz 
+-// <5=> 500 kHz 
+-// <6=> 250 kHz 
+-// <7=> 125 kHz 
+-// <8=> 62.5 kHz 
+-// <9=> 31.25 kHz 
+-
+-#ifndef TIMER_DEFAULT_CONFIG_FREQUENCY
+-#define TIMER_DEFAULT_CONFIG_FREQUENCY 0
+-#endif
+-
+-// <o> TIMER_DEFAULT_CONFIG_MODE  - Timer mode or operation
+- 
+-// <0=> Timer 
+-// <1=> Counter 
+-
+-#ifndef TIMER_DEFAULT_CONFIG_MODE
+-#define TIMER_DEFAULT_CONFIG_MODE 0
+-#endif
+-
+-// <o> TIMER_DEFAULT_CONFIG_BIT_WIDTH  - Timer counter bit width
+- 
+-// <0=> 16 bit 
+-// <1=> 8 bit 
+-// <2=> 24 bit 
+-// <3=> 32 bit 
+-
+-#ifndef TIMER_DEFAULT_CONFIG_BIT_WIDTH
+-#define TIMER_DEFAULT_CONFIG_BIT_WIDTH 0
+-#endif
+-
+-// <o> TIMER_DEFAULT_CONFIG_IRQ_PRIORITY  - Interrupt priority
+- 
+-
+-// <i> Priorities 0,2 (nRF51) and 0,1,4,5 (nRF52) are reserved for SoftDevice
+-// <0=> 0 (highest) 
+-// <1=> 1 
+-// <2=> 2 
+-// <3=> 3 
+-// <4=> 4 
+-// <5=> 5 
+-// <6=> 6 
+-// <7=> 7 
+-
+-#ifndef TIMER_DEFAULT_CONFIG_IRQ_PRIORITY
+-#define TIMER_DEFAULT_CONFIG_IRQ_PRIORITY 6
+-#endif
+-
+-// <q> TIMER0_ENABLED  - Enable TIMER0 instance
+- 
+-
+-#ifndef TIMER0_ENABLED
+-#define TIMER0_ENABLED 0
+-#endif
+-
+-// <q> TIMER1_ENABLED  - Enable TIMER1 instance
+- 
+-
+-#ifndef TIMER1_ENABLED
+-#define TIMER1_ENABLED 0
+-#endif
+-
+-// <q> TIMER2_ENABLED  - Enable TIMER2 instance
+- 
+-
+-#ifndef TIMER2_ENABLED
+-#define TIMER2_ENABLED 0
+-#endif
+-
+-// <q> TIMER3_ENABLED  - Enable TIMER3 instance
+- 
+-
+-#ifndef TIMER3_ENABLED
+-#define TIMER3_ENABLED 0
+-#endif
+-
+-// <q> TIMER4_ENABLED  - Enable TIMER4 instance
+- 
+-
+-#ifndef TIMER4_ENABLED
+-#define TIMER4_ENABLED 0
+-#endif
+-
+-// </e>
+-
+ // <e> TWIS_ENABLED - nrf_drv_twis - TWIS peripheral driver - legacy layer
+ //==========================================================
+ #ifndef TWIS_ENABLED
+@@ -7140,6 +6980,14 @@
+ 
+ // </e>
+ 
++// <q> NRF_LIBUARTE_ASYNC_WITH_APP_TIMER  - nrf_libuarte_async - libUARTE_async library
++ 
++
++#ifndef NRF_LIBUARTE_ASYNC_WITH_APP_TIMER
++#define NRF_LIBUARTE_ASYNC_WITH_APP_TIMER 1
++#endif
++
++
+ // <e> NRF_CSENSE_ENABLED - nrf_csense - Capacitive sensor module
+ //==========================================================
+ #ifndef NRF_CSENSE_ENABLED
+@@ -7411,7 +7259,7 @@
+ // <e> NRF_QUEUE_ENABLED - nrf_queue - Queue module
+ //==========================================================
+ #ifndef NRF_QUEUE_ENABLED
+-#define NRF_QUEUE_ENABLED 0
++#define NRF_QUEUE_ENABLED 1
+ #endif
+ // <q> NRF_QUEUE_CLI_CMDS  - Enable CLI commands specific to the module
+  
+@@ -7686,6 +7534,33 @@
+ // </h> 
+ //==========================================================
+ 
++// <h> nrf_libuarte_drv - libUARTE library
++
++//==========================================================
++// <q> NRF_LIBUARTE_DRV_HWFC_ENABLED  - Enable HWFC support in the driver
++ 
++
++#ifndef NRF_LIBUARTE_DRV_HWFC_ENABLED
++#define NRF_LIBUARTE_DRV_HWFC_ENABLED 0
++#endif
++
++// <q> NRF_LIBUARTE_DRV_UARTE0  - UARTE0 instance
++ 
++
++#ifndef NRF_LIBUARTE_DRV_UARTE0
++#define NRF_LIBUARTE_DRV_UARTE0 1
++#endif
++
++// <q> NRF_LIBUARTE_DRV_UARTE1  - UARTE1 instance
++ 
++
++#ifndef NRF_LIBUARTE_DRV_UARTE1
++#define NRF_LIBUARTE_DRV_UARTE1 0
++#endif
++
++// </h> 
++//==========================================================
++
+ // </h> 
+ //==========================================================
+ 
+diff --git a/pca10056/s140/ses/ble_app_uart_pca10056_s140.emProject b/pca10056/s140/ses/ble_app_uart_pca10056_s140.emProject
+index 72a27bf..59d4633 100644
+--- a/pca10056/s140/ses/ble_app_uart_pca10056_s140.emProject
++++ b/pca10056/s140/ses/ble_app_uart_pca10056_s140.emProject
+@@ -15,27 +15,27 @@
+       arm_simulator_memory_simulation_parameter="RWX 00000000,00100000,FFFFFFFF;RWX 20000000,00010000,CDCDCDCD"
+       arm_target_device_name="nRF52840_xxAA"
+       arm_target_interface_type="SWD"
+-      c_user_include_directories="../../../config;../../../../../../components;../../../../../../components/ble/ble_advertising;../../../../../../components/ble/ble_dtm;../../../../../../components/ble/ble_link_ctx_manager;../../../../../../components/ble/ble_racp;../../../../../../components/ble/ble_services/ble_ancs_c;../../../../../../components/ble/ble_services/ble_ans_c;../../../../../../components/ble/ble_services/ble_bas;../../../../../../components/ble/ble_services/ble_bas_c;../../../../../../components/ble/ble_services/ble_cscs;../../../../../../components/ble/ble_services/ble_cts_c;../../../../../../components/ble/ble_services/ble_dfu;../../../../../../components/ble/ble_services/ble_dis;../../../../../../components/ble/ble_services/ble_gls;../../../../../../components/ble/ble_services/ble_hids;../../../../../../components/ble/ble_services/ble_hrs;../../../../../../components/ble/ble_services/ble_hrs_c;../../../../../../components/ble/ble_services/ble_hts;../../../../../../components/ble/ble_services/ble_ias;../../../../../../components/ble/ble_services/ble_ias_c;../../../../../../components/ble/ble_services/ble_lbs;../../../../../../components/ble/ble_services/ble_lbs_c;../../../../../../components/ble/ble_services/ble_lls;../../../../../../components/ble/ble_services/ble_nus;../../../../../../components/ble/ble_services/ble_nus_c;../../../../../../components/ble/ble_services/ble_rscs;../../../../../../components/ble/ble_services/ble_rscs_c;../../../../../../components/ble/ble_services/ble_tps;../../../../../../components/ble/common;../../../../../../components/ble/nrf_ble_gatt;../../../../../../components/ble/nrf_ble_qwr;../../../../../../components/ble/peer_manager;../../../../../../components/boards;../../../../../../components/libraries/atomic;../../../../../../components/libraries/atomic_fifo;../../../../../../components/libraries/atomic_flags;../../../../../../components/libraries/balloc;../../../../../../components/libraries/bootloader/ble_dfu;../../../../../../components/libraries/bsp;../../../../../../components/libraries/button;../../../../../../components/libraries/cli;../../../../../../components/libraries/crc16;../../../../../../components/libraries/crc32;../../../../../../components/libraries/crypto;../../../../../../components/libraries/csense;../../../../../../components/libraries/csense_drv;../../../../../../components/libraries/delay;../../../../../../components/libraries/ecc;../../../../../../components/libraries/experimental_section_vars;../../../../../../components/libraries/experimental_task_manager;../../../../../../components/libraries/fds;../../../../../../components/libraries/fifo;../../../../../../components/libraries/fstorage;../../../../../../components/libraries/gfx;../../../../../../components/libraries/gpiote;../../../../../../components/libraries/hardfault;../../../../../../components/libraries/hci;../../../../../../components/libraries/led_softblink;../../../../../../components/libraries/log;../../../../../../components/libraries/log/src;../../../../../../components/libraries/low_power_pwm;../../../../../../components/libraries/mem_manager;../../../../../../components/libraries/memobj;../../../../../../components/libraries/mpu;../../../../../../components/libraries/mutex;../../../../../../components/libraries/pwm;../../../../../../components/libraries/pwr_mgmt;../../../../../../components/libraries/queue;../../../../../../components/libraries/ringbuf;../../../../../../components/libraries/scheduler;../../../../../../components/libraries/sdcard;../../../../../../components/libraries/slip;../../../../../../components/libraries/sortlist;../../../../../../components/libraries/spi_mngr;../../../../../../components/libraries/stack_guard;../../../../../../components/libraries/strerror;../../../../../../components/libraries/svc;../../../../../../components/libraries/timer;../../../../../../components/libraries/twi_mngr;../../../../../../components/libraries/twi_sensor;../../../../../../components/libraries/uart;../../../../../../components/libraries/usbd;../../../../../../components/libraries/usbd/class/audio;../../../../../../components/libraries/usbd/class/cdc;../../../../../../components/libraries/usbd/class/cdc/acm;../../../../../../components/libraries/usbd/class/hid;../../../../../../components/libraries/usbd/class/hid/generic;../../../../../../components/libraries/usbd/class/hid/kbd;../../../../../../components/libraries/usbd/class/hid/mouse;../../../../../../components/libraries/usbd/class/msc;../../../../../../components/libraries/util;../../../../../../components/nfc/ndef/conn_hand_parser;../../../../../../components/nfc/ndef/conn_hand_parser/ac_rec_parser;../../../../../../components/nfc/ndef/conn_hand_parser/ble_oob_advdata_parser;../../../../../../components/nfc/ndef/conn_hand_parser/le_oob_rec_parser;../../../../../../components/nfc/ndef/connection_handover/ac_rec;../../../../../../components/nfc/ndef/connection_handover/ble_oob_advdata;../../../../../../components/nfc/ndef/connection_handover/ble_pair_lib;../../../../../../components/nfc/ndef/connection_handover/ble_pair_msg;../../../../../../components/nfc/ndef/connection_handover/common;../../../../../../components/nfc/ndef/connection_handover/ep_oob_rec;../../../../../../components/nfc/ndef/connection_handover/hs_rec;../../../../../../components/nfc/ndef/connection_handover/le_oob_rec;../../../../../../components/nfc/ndef/generic/message;../../../../../../components/nfc/ndef/generic/record;../../../../../../components/nfc/ndef/launchapp;../../../../../../components/nfc/ndef/parser/message;../../../../../../components/nfc/ndef/parser/record;../../../../../../components/nfc/ndef/text;../../../../../../components/nfc/ndef/uri;../../../../../../components/nfc/platform;../../../../../../components/nfc/t2t_lib;../../../../../../components/nfc/t2t_parser;../../../../../../components/nfc/t4t_lib;../../../../../../components/nfc/t4t_parser/apdu;../../../../../../components/nfc/t4t_parser/cc_file;../../../../../../components/nfc/t4t_parser/hl_detection_procedure;../../../../../../components/nfc/t4t_parser/tlv;../../../../../../components/softdevice/common;../../../../../../components/softdevice/s140/headers;../../../../../../components/softdevice/s140/headers/nrf52;../../../../../../components/toolchain/cmsis/include;../../../../../../external/fprintf;../../../../../../external/segger_rtt;../../../../../../external/utf_converter;../../../../../../integration/nrfx;../../../../../../integration/nrfx/legacy;../../../../../../modules/nrfx;../../../../../../modules/nrfx/drivers/include;../../../../../../modules/nrfx/hal;../../../../../../modules/nrfx/mdk;../config;"
+       c_preprocessor_definitions="APP_TIMER_V2;APP_TIMER_V2_RTC1_ENABLED;BOARD_PCA10056;CONFIG_GPIO_AS_PINRESET;FLOAT_ABI_HARD;INITIALIZE_USER_SECTIONS;NO_VTOR_CONFIG;NRF52840_XXAA;NRF_SD_BLE_API_VERSION=7;S140;SOFTDEVICE_PRESENT;"
+-      debug_target_connection="J-Link"
+-      gcc_entry_point="Reset_Handler"
+-      macros="CMSIS_CONFIG_TOOL=../../../../../../external_tools/cmsisconfig/CMSIS_Configuration_Wizard.jar"
+-      debug_register_definition_file="../../../../../../modules/nrfx/mdk/nrf52840.svd"
++      c_user_include_directories="../../../config;../../../../../../components;../../../../../../components/ble/ble_advertising;../../../../../../components/ble/ble_dtm;../../../../../../components/ble/ble_link_ctx_manager;../../../../../../components/ble/ble_racp;../../../../../../components/ble/ble_services/ble_ancs_c;../../../../../../components/ble/ble_services/ble_ans_c;../../../../../../components/ble/ble_services/ble_bas;../../../../../../components/ble/ble_services/ble_bas_c;../../../../../../components/ble/ble_services/ble_cscs;../../../../../../components/ble/ble_services/ble_cts_c;../../../../../../components/ble/ble_services/ble_dfu;../../../../../../components/ble/ble_services/ble_dis;../../../../../../components/ble/ble_services/ble_gls;../../../../../../components/ble/ble_services/ble_hids;../../../../../../components/ble/ble_services/ble_hrs;../../../../../../components/ble/ble_services/ble_hrs_c;../../../../../../components/ble/ble_services/ble_hts;../../../../../../components/ble/ble_services/ble_ias;../../../../../../components/ble/ble_services/ble_ias_c;../../../../../../components/ble/ble_services/ble_lbs;../../../../../../components/ble/ble_services/ble_lbs_c;../../../../../../components/ble/ble_services/ble_lls;../../../../../../components/ble/ble_services/ble_nus;../../../../../../components/ble/ble_services/ble_nus_c;../../../../../../components/ble/ble_services/ble_rscs;../../../../../../components/ble/ble_services/ble_rscs_c;../../../../../../components/ble/ble_services/ble_tps;../../../../../../components/ble/common;../../../../../../components/ble/nrf_ble_gatt;../../../../../../components/ble/nrf_ble_qwr;../../../../../../components/ble/peer_manager;../../../../../../components/boards;../../../../../../components/libraries/atomic;../../../../../../components/libraries/atomic_fifo;../../../../../../components/libraries/atomic_flags;../../../../../../components/libraries/balloc;../../../../../../components/libraries/bootloader/ble_dfu;../../../../../../components/libraries/bsp;../../../../../../components/libraries/button;../../../../../../components/libraries/cli;../../../../../../components/libraries/crc16;../../../../../../components/libraries/crc32;../../../../../../components/libraries/crypto;../../../../../../components/libraries/csense;../../../../../../components/libraries/csense_drv;../../../../../../components/libraries/delay;../../../../../../components/libraries/ecc;../../../../../../components/libraries/experimental_section_vars;../../../../../../components/libraries/experimental_task_manager;../../../../../../components/libraries/fds;../../../../../../components/libraries/fifo;../../../../../../components/libraries/fstorage;../../../../../../components/libraries/gfx;../../../../../../components/libraries/gpiote;../../../../../../components/libraries/hardfault;../../../../../../components/libraries/hci;../../../../../../components/libraries/led_softblink;../../../../../../components/libraries/log;../../../../../../components/libraries/log/src;../../../../../../components/libraries/libuarte;../../../../../../components/libraries/low_power_pwm;../../../../../../components/libraries/mem_manager;../../../../../../components/libraries/memobj;../../../../../../components/libraries/mpu;../../../../../../components/libraries/mutex;../../../../../../components/libraries/pwm;../../../../../../components/libraries/pwr_mgmt;../../../../../../components/libraries/queue;../../../../../../components/libraries/ringbuf;../../../../../../components/libraries/scheduler;../../../../../../components/libraries/sdcard;../../../../../../components/libraries/slip;../../../../../../components/libraries/sortlist;../../../../../../components/libraries/spi_mngr;../../../../../../components/libraries/stack_guard;../../../../../../components/libraries/strerror;../../../../../../components/libraries/svc;../../../../../../components/libraries/timer;../../../../../../components/libraries/twi_mngr;../../../../../../components/libraries/twi_sensor;../../../../../../components/libraries/uart;../../../../../../components/libraries/usbd;../../../../../../components/libraries/usbd/class/audio;../../../../../../components/libraries/usbd/class/cdc;../../../../../../components/libraries/usbd/class/cdc/acm;../../../../../../components/libraries/usbd/class/hid;../../../../../../components/libraries/usbd/class/hid/generic;../../../../../../components/libraries/usbd/class/hid/kbd;../../../../../../components/libraries/usbd/class/hid/mouse;../../../../../../components/libraries/usbd/class/msc;../../../../../../components/libraries/util;../../../../../../components/nfc/ndef/conn_hand_parser;../../../../../../components/nfc/ndef/conn_hand_parser/ac_rec_parser;../../../../../../components/nfc/ndef/conn_hand_parser/ble_oob_advdata_parser;../../../../../../components/nfc/ndef/conn_hand_parser/le_oob_rec_parser;../../../../../../components/nfc/ndef/connection_handover/ac_rec;../../../../../../components/nfc/ndef/connection_handover/ble_oob_advdata;../../../../../../components/nfc/ndef/connection_handover/ble_pair_lib;../../../../../../components/nfc/ndef/connection_handover/ble_pair_msg;../../../../../../components/nfc/ndef/connection_handover/common;../../../../../../components/nfc/ndef/connection_handover/ep_oob_rec;../../../../../../components/nfc/ndef/connection_handover/hs_rec;../../../../../../components/nfc/ndef/connection_handover/le_oob_rec;../../../../../../components/nfc/ndef/generic/message;../../../../../../components/nfc/ndef/generic/record;../../../../../../components/nfc/ndef/launchapp;../../../../../../components/nfc/ndef/parser/message;../../../../../../components/nfc/ndef/parser/record;../../../../../../components/nfc/ndef/text;../../../../../../components/nfc/ndef/uri;../../../../../../components/nfc/platform;../../../../../../components/nfc/t2t_lib;../../../../../../components/nfc/t2t_parser;../../../../../../components/nfc/t4t_lib;../../../../../../components/nfc/t4t_parser/apdu;../../../../../../components/nfc/t4t_parser/cc_file;../../../../../../components/nfc/t4t_parser/hl_detection_procedure;../../../../../../components/nfc/t4t_parser/tlv;../../../../../../components/softdevice/common;../../../../../../components/softdevice/s140/headers;../../../../../../components/softdevice/s140/headers/nrf52;../../../../../../components/toolchain/cmsis/include;../../../../../../external/fprintf;../../../../../../external/segger_rtt;../../../../../../external/utf_converter;../../../../../../integration/nrfx;../../../../../../integration/nrfx/legacy;../../../../../../modules/nrfx;../../../../../../modules/nrfx/drivers/include;../../../../../../modules/nrfx/hal;../../../../../../modules/nrfx/mdk;../config"
+       debug_additional_load_file="../../../../../../components/softdevice/s140/hex/s140_nrf52_7.2.0_softdevice.hex"
++      debug_register_definition_file="../../../../../../modules/nrfx/mdk/nrf52840.svd"
+       debug_start_from_entry_point_symbol="No"
+-      gcc_debugging_level="Level 3"      linker_output_format="hex"
+-      linker_printf_width_precision_supported="Yes"
++      debug_target_connection="J-Link"
++      gcc_debugging_level="Level 3"
++      gcc_entry_point="Reset_Handler"
++      linker_output_format="hex"
+       linker_printf_fmt_level="long"
++      linker_printf_width_precision_supported="Yes"
+       linker_scanf_fmt_level="long"
+       linker_section_placement_file="flash_placement.xml"
+       linker_section_placement_macros="FLASH_PH_START=0x0;FLASH_PH_SIZE=0x100000;RAM_PH_START=0x20000000;RAM_PH_SIZE=0x40000;FLASH_START=0x27000;FLASH_SIZE=0xd9000;RAM_START=0x20002ae8;RAM_SIZE=0x3d518"
+-      
+       linker_section_placements_segments="FLASH RX 0x0 0x100000;RAM1 RWX 0x20000000 0x40000"
++      macros="CMSIS_CONFIG_TOOL=../../../../../../external_tools/cmsisconfig/CMSIS_Configuration_Wizard.jar"
+       project_directory=""
+       project_type="Executable" />
+-      <folder Name="Segger Startup Files">
+-        <file file_name="$(StudioDir)/source/thumb_crt0.s" />
+-      </folder>
++    <folder Name="Segger Startup Files">
++      <file file_name="$(StudioDir)/source/thumb_crt0.s" />
++    </folder>
+     <folder Name="nRF_Log">
+       <file file_name="../../../../../../components/libraries/log/src/nrf_log_backend_rtt.c" />
+       <file file_name="../../../../../../components/libraries/log/src/nrf_log_backend_serial.c" />
+@@ -48,10 +48,8 @@
+       <file file_name="../../../../../../components/libraries/util/app_error.c" />
+       <file file_name="../../../../../../components/libraries/util/app_error_handler_gcc.c" />
+       <file file_name="../../../../../../components/libraries/util/app_error_weak.c" />
+-      <file file_name="../../../../../../components/libraries/fifo/app_fifo.c" />
+       <file file_name="../../../../../../components/libraries/scheduler/app_scheduler.c" />
+       <file file_name="../../../../../../components/libraries/timer/app_timer2.c" />
+-      <file file_name="../../../../../../components/libraries/uart/app_uart_fifo.c" />
+       <file file_name="../../../../../../components/libraries/util/app_util_platform.c" />
+       <file file_name="../../../../../../components/libraries/timer/drv_rtc.c" />
+       <file file_name="../../../../../../components/libraries/hardfault/hardfault_implementation.c" />
+@@ -68,7 +66,9 @@
+       <file file_name="../../../../../../components/libraries/experimental_section_vars/nrf_section_iter.c" />
+       <file file_name="../../../../../../components/libraries/sortlist/nrf_sortlist.c" />
+       <file file_name="../../../../../../components/libraries/strerror/nrf_strerror.c" />
+-      <file file_name="../../../../../../components/libraries/uart/retarget.c" />
++      <file file_name="../../../../../../components/libraries/libuarte/nrf_libuarte_async.c" />
++      <file file_name="../../../../../../components/libraries/libuarte/nrf_libuarte_drv.c" />
++      <file file_name="../../../../../../components/libraries/queue/nrf_queue.c" />
+     </folder>
+     <folder Name="None">
+       <file file_name="../../../../../../modules/nrfx/mdk/ses_startup_nrf52840.s" />
+@@ -80,13 +80,13 @@
+     </folder>
+     <folder Name="nRF_Drivers">
+       <file file_name="../../../../../../integration/nrfx/legacy/nrf_drv_clock.c" />
+-      <file file_name="../../../../../../integration/nrfx/legacy/nrf_drv_uart.c" />
+       <file file_name="../../../../../../modules/nrfx/soc/nrfx_atomic.c" />
+       <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_clock.c" />
+       <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_gpiote.c" />
+       <file file_name="../../../../../../modules/nrfx/drivers/src/prs/nrfx_prs.c" />
+-      <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_uart.c" />
+-      <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_uarte.c" />
++      <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_rtc.c" />
++      <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_ppi.c" />
++      <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_timer.c" />
+     </folder>
+     <folder Name="Board Support">
+       <file file_name="../../../../../../components/libraries/bsp/bsp.c" />
+@@ -123,11 +123,13 @@
+       <file file_name="../../../../../../components/softdevice/common/nrf_sdh_soc.c" />
+     </folder>
+   </project>
+-  <configuration Name="Release"
++  <configuration
++    Name="Release"
+     c_preprocessor_definitions="NDEBUG"
+-    link_time_optimization="No"    gcc_optimization_level="Optimize For Size" />
+-  <configuration Name="Debug"
++    gcc_optimization_level="Optimize For Size"
++    link_time_optimization="No" />
++  <configuration
++    Name="Debug"
+     c_preprocessor_definitions="DEBUG; DEBUG_NRF"
+-    gcc_optimization_level="None"/>
+-
++    gcc_optimization_level="None" />
+ </solution>

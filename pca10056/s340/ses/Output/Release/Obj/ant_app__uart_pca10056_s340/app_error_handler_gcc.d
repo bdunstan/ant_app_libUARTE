@@ -1,0 +1,36 @@
+Output/Release/Obj/ant_app__uart_pca10056_s340/app_error_handler_gcc.o: \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/app_error_handler_gcc.c \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/sdk_common.h \
+ /Applications/arm_segger_embedded_studio_v550a_macos_x64_nordic/include/stdint.h \
+ /Applications/arm_segger_embedded_studio_v550a_macos_x64_nordic/include/stdbool.h \
+ /Applications/arm_segger_embedded_studio_v550a_macos_x64_nordic/include/string.h \
+ /Applications/arm_segger_embedded_studio_v550a_macos_x64_nordic/include/__crossworks.h \
+ ../config/sdk_config.h \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/nordic_common.h \
+ ../../../../../../modules/nrfx/mdk/compiler_abstraction.h \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/sdk_os.h \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/sdk_errors.h \
+ ../../../../../../components/softdevice/s340/headers/nrf_error.h \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/app_util.h \
+ /Applications/arm_segger_embedded_studio_v550a_macos_x64_nordic/include/stddef.h \
+ ../../../../../../modules/nrfx/mdk/nrf.h \
+ ../../../../../../modules/nrfx/mdk/nrf52840.h \
+ ../../../../../../components/toolchain/cmsis/include/core_cm4.h \
+ ../../../../../../components/toolchain/cmsis/include/cmsis_version.h \
+ ../../../../../../components/toolchain/cmsis/include/cmsis_compiler.h \
+ ../../../../../../components/toolchain/cmsis/include/cmsis_gcc.h \
+ ../../../../../../components/toolchain/cmsis/include/mpu_armv7.h \
+ ../../../../../../modules/nrfx/mdk/system_nrf52840.h \
+ ../../../../../../modules/nrfx/mdk/nrf52840_bitfields.h \
+ ../../../../../../modules/nrfx/mdk/nrf51_to_nrf52840.h \
+ ../../../../../../modules/nrfx/mdk/nrf52_to_nrf52840.h \
+ ../../../../../../modules/nrfx/mdk/compiler_abstraction.h \
+ ../../../../../../components/softdevice/s340/headers/nrf52/nrf_mbr.h \
+ ../../../../../../components/softdevice/s340/headers/nrf_svc.h \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/sdk_macros.h \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/nrf_assert.h \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/app_error.h \
+ /Applications/arm_segger_embedded_studio_v550a_macos_x64_nordic/include/stdio.h \
+ /Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/libraries/util/app_error_weak.h \
+ ../../../../../../components/softdevice/s340/headers/ant_error.h \
+ ../../../../../../components/softdevice/s340/headers/ant_parameters.h
