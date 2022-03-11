@@ -140,9 +140,10 @@ void ant_bpwr_evt_handler(ant_bpwr_profile_t *p_profile, ant_bpwr_evt_t event) {
     if (event_sent != p_page_buffer->update_event_count) {
 
     NRF_LOG_INFO("event:                   %d", p_page_buffer->update_event_count);
+
     //NRF_LOG_INFO("accumulated power:       %u W", p_page_buffer->accumulated_power);
-    //NRF_LOG_INFO("instantaneous power:     %u W", p_page_buffer->instantaneous_power);
-    //NRF_LOG_HEXDUMP_INFO(p_page_buffer, sizeof(ant_bpwr_page16_data_t));
+    NRF_LOG_INFO("instantaneous power:     %u W", p_page_buffer->instantaneous_power);
+    NRF_LOG_HEXDUMP_INFO(p_page_buffer, sizeof(ant_bpwr_page16_data_t));
 
       err_code = nrf_libuarte_async_tx(&libuarte, (uint8_t *)p_page_buffer, sizeof(ant_bpwr_page16_data_t));
       APP_ERROR_CHECK(err_code);
@@ -298,6 +299,7 @@ void ant_evt_handler(ant_evt_t *p_ant_evt, void *p_context) {
 
       NRF_LOG_HEXDUMP_INFO(p_ant_message->ANT_MESSAGE_aucPayload, ANT_STANDARD_DATA_PAYLOAD_SIZE);
       NRF_LOG_INFO("%d", p_ant_message->ANT_MESSAGE_aucPayload[1]);
+      //printf("Payload 1 (%d)\n", p_ant_message->ANT_MESSAGE_aucPayload[1]);
 
       for (int i = 0; i < ANT_STANDARD_DATA_PAYLOAD_SIZE; i++) {
         //NRF_LOG_INFO("%02X ", p_ant_message->ANT_MESSAGE_aucPayload[i]);
@@ -452,8 +454,12 @@ static void uart_init(void) {
   uint32_t err_code;
 
   nrf_libuarte_async_config_t nrf_libuarte_async_config = {
+   //NRF9160DK
       .tx_pin = 17,
       .rx_pin = 20,
+  // Thingy 91   
+      //.tx_pin = 25,
+      //.rx_pin = 32,
       .baudrate = NRF_UARTE_BAUDRATE_115200,
       .parity = NRF_UARTE_PARITY_EXCLUDED,
       .hwfc = NRF_UARTE_HWFC_DISABLED,
@@ -527,6 +533,7 @@ int main(void) {
 
   // Start execution.
   NRF_LOG_INFO("Start bpwr over uart:");
+  printf("Test Messgage\n");
 
   for (;;) {
     NRF_LOG_FLUSH();

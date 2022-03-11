@@ -35,6 +35,7 @@
   <ProjectSessionItem path="ant_app_uart_pca10056_s340;ant_app__uart_pca10056_s340;nRF_BLE"/>
   <ProjectSessionItem path="ant_app_uart_pca10056_s340;ant_app__uart_pca10056_s340;nRF_Drivers"/>
   <ProjectSessionItem path="ant_app_uart_pca10056_s340;ant_app__uart_pca10056_s340;nRF_Libraries"/>
+  <SourceCodeControlLogin password="F9BB6682F5D56822" user="Brett Dunstan &lt;brett.dunstan@gmail.com>"/>
  </Project>
  <Register1>
   <RegisterWindow visibleNodes="CPU - Current Context/r0;CPU - Current Context/r1;CPU - Current Context/r2;CPU - Current Context/r3;CPU - Current Context/r4;CPU - Current Context/r5;CPU - Current Context/r6;CPU - Current Context/r7;CPU - Current Context/r8;CPU - Current Context/r9;CPU - Current Context/r10;CPU - Current Context/r11;CPU - Current Context/r12;CPU - Current Context/sp(r13);CPU - Current Context/lr(r14);CPU - Current Context/pc(r15);CPU - Current Context/apsr;CPU/r0;CPU/r1;CPU/r2;CPU/r3;CPU/r4;CPU/r5;CPU/r6;CPU/r7;CPU/r8;CPU/r9;CPU/r10;CPU/r11;CPU/r12;CPU/sp(r13);CPU/lr(r14);CPU/pc(r15);CPU/xpsr;CPU/internal" binaryNodes="" asciiNodes="" openNodes="CPU - Current Context" name="ant_app_uart_pca10056_s340" decimalNodes="" octalNodes="" unsignedNodes=""/>
@@ -71,10 +72,9 @@
   <Watches active="0" update="Never"/>
  </Watch4>
  <Files>
-  <SessionOpenFile windowGroup="DockEditLeft" x="12" y="175" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../../main.c" selected="0" top="158" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="34" y="130" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../config/sdk_config.h" selected="0" top="98" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="0" y="0" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../../../../../modules/nrfx/drivers/include/nrfx_power_clock.h" selected="0" top="0" codecName="Default"/>
-  <SessionOpenFile windowGroup="DockEditLeft" x="4" y="50" useTextEdit="1" openedFrom="/Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/examples/MyProjects/ant_app_libUARTE/main.c" useBinaryEdit="0" left="0" path="../../../../../../components/ant/ant_channel_config/ant_channel_config.c" selected="0" top="18" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="33" y="165" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../../main.c" selected="1" top="212" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="51" y="742" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../config/sdk_config.h" selected="0" top="709" codecName="Default"/>
+  <SessionOpenFile windowGroup="DockEditLeft" x="8" y="75" useTextEdit="1" openedFrom="" useBinaryEdit="0" left="0" path="../../../../../../components/ant/ant_profiles/ant_bpwr/pages/ant_bpwr_page_16.c" selected="0" top="43" codecName="Default"/>
  </Files>
  <ARMCrossStudioWindow activeProject="ant_app__uart_pca10056_s340" fileDialogDefaultFilter="*.c;*.cpp;*.cxx;*.cc;*.h;*.hpp;*.hxx" autoConnectTarget="J-Link" buildConfiguration="Release" sessionSettings="" debugSearchFileMap="" fileDialogInitialDirectory="/Users/bdunstan/code/nRF5SDK1702/nRF5_SDK_17.0.2_d674dde/components/ant/ant_profiles/ant_bpwr/pages" debugSearchPath="" autoConnectCapabilities="3199"/>
 </session>
